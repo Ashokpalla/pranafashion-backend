@@ -70,13 +70,6 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     db.Database.Migrate();
 }
-// ── Auto-create DB on startup (dev) ──────────────────────
-if (app.Environment.IsDevelopment())
-{
-    using var scope = app.Services.CreateScope();
-    var ctx = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    ctx.Database.EnsureCreated();
-}
 
 app.UseSwagger();
 app.UseSwaggerUI(c =>
