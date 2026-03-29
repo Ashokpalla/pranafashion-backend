@@ -6,11 +6,12 @@ using System.Text;
 using PranaFashion.Infrastructure.Data;
 using PranaFashion.API.Services;
 
+
 var builder = WebApplication.CreateBuilder(args);
 
 // ── Database ──────────────────────────────────────────────
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"))); // Add missing parenthesis
 
 // ── JWT Auth ──────────────────────────────────────────────
 var jwtKey = builder.Configuration["Jwt:Key"]!;
@@ -37,9 +38,13 @@ builder.Services.AddScoped<IEmailService, EmailService>();
 
 // ── CORS — allow Angular dev server ──────────────────────
 builder.Services.AddCors(o => o.AddPolicy("Angular", p =>
-    p.WithOrigins("http://localhost:4200")
-     .AllowAnyHeader()
-     .AllowAnyMethod()));
+    p.WithOrigins(
+        "http://localhost:4200",
+        "https://pranafashionstudio.com",
+        "https://www.pranafashionstudio.com"
+    )
+    .AllowAnyHeader()
+    .AllowAnyMethod()));
 
 // ── Swagger ───────────────────────────────────────────────
 builder.Services.AddEndpointsApiExplorer();
@@ -60,6 +65,11 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.Migrate();
+}
 // ── Auto-create DB on startup (dev) ──────────────────────
 if (app.Environment.IsDevelopment())
 {

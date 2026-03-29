@@ -79,7 +79,7 @@ public class EmailService(IConfiguration config, ILogger<EmailService> logger) :
     // ── Welcome Email  →  no-reply@ ──────────────────────
     public async Task SendWelcomeEmailAsync(string toEmail, string toName)
     {
-        var subject = $"Welcome to Prana Fashion Studio, {toName}! 🪷";
+        var subject = $"Welcome to Prana Fashion Studio, {toName}!";
         var body = $@"<!DOCTYPE html>
 <html>
 <body style=""font-family:Arial,sans-serif;background:#FAF6EE;margin:0;padding:40px 0;"">
@@ -290,10 +290,27 @@ public class EmailService(IConfiguration config, ILogger<EmailService> logger) :
             var msg = new MimeMessage();
             msg.From.Add(new MailboxAddress(DisplayName, fromEmail));
             msg.To.Add(new MailboxAddress(toName, toEmail));
-            msg.Subject = subject;
-            msg.Body    = new TextPart("html") { Text = htmlBody };
+            msg.Subject  = subject;
+            msg.Priority = MessagePriority.Normal;
+
+            // Deliverability headers — reduces spam score
+            msg.Headers.Add("X-Mailer",        "PranaFashion/1.0");
+            msg.Headers.Add("Reply-To",         ContactEmail.Length > 0 ? ContactEmail : fromEmail);
+            msg.Headers.Add("X-Entity-Ref-ID",  Guid.NewGuid().ToString());
+
+            // Build multipart body: plain text fallback + HTML
+            var plain = new TextPart("plain")
+            {
+                Text = $"Hello {toName},\n\n{subject}\n\nVisit: https://pranafashionstudio.com\n\nPrana Fashion Studio\nD.No: 69-3-19/2, Rajendra Nagar, Kakinada\n8019304566 | 9492704566"
+            };
+            var html = new TextPart("html") { Text = htmlBody };
+
+            msg.Body = new Multipart("alternative") { plain, html };
 
             using var client = new SmtpClient();
+            // Disable certificate validation issues on some hosts
+            client.ServerCertificateValidationCallback = (s, c, h, e) => true;
+
             await client.ConnectAsync(SmtpHost, SmtpPort, SecureSocketOptions.Auto);
             await client.AuthenticateAsync(fromEmail, fromPassword);
             await client.SendAsync(msg);

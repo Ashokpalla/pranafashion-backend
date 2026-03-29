@@ -41,8 +41,20 @@ public class AuthController(
         db.Users.Add(user);
         await db.SaveChangesAsync();
 
-        _ = email.SendWelcomeEmailAsync(user.Email, user.Name);
-        return Ok(BuildAuthResponse(user));
+        // Build auth response first so we can return immediately
+        var authResponse = BuildAuthResponse(user);
+
+        // Send welcome email — awaited properly so it doesn't get GC'd
+        // Use Task.Run so it doesn't block the HTTP response
+        var userName  = user.Name;
+        var userEmail = user.Email;
+        _ = Task.Run(async () =>
+        {
+            try { await email.SendWelcomeEmailAsync(userEmail, userName); }
+            catch (Exception ex) { logger.LogError(ex, "Welcome email failed for {Email}", userEmail); }
+        });
+
+        return Ok(authResponse);
     }
 
     // ── LOGIN ─────────────────────────────────────────────
@@ -56,7 +68,7 @@ public class AuthController(
         return Ok(BuildAuthResponse(user));
     }
 
-    // ── REFRESH ───────────────────────────────────────────
+    // ── REFRESH TOKEN ─────────────────────────────────────
     [HttpPost("refresh")]
     public async Task<IActionResult> Refresh([FromBody] RefreshRequest req)
     {
@@ -68,22 +80,23 @@ public class AuthController(
         return Ok(BuildAuthResponse(user));
     }
 
-    // ── FORGOT PASSWORD ───────────────────────────────────
+    // ── FORGOT PASSWORD — sends OTP ───────────────────────
     [HttpPost("forgot-password")]
     public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest req)
     {
         var user = await db.Users.FirstOrDefaultAsync(u => u.Email == req.Email.ToLower().Trim());
 
+        // Always return same message to prevent email enumeration
         if (user is null)
             return Ok(new { message = "If this email is registered, an OTP has been sent." });
 
-        // Invalidate existing tokens
+        // Invalidate any existing active tokens
         var existing = await db.PasswordResetTokens
             .Where(t => t.UserId == user.Id && !t.IsUsed)
             .ToListAsync();
         existing.ForEach(t => t.IsUsed = true);
 
-        // 6-digit OTP
+        // Generate 6-digit OTP
         var otp     = new Random().Next(100000, 999999).ToString();
         var otpHash = BCrypt.Net.BCrypt.HashPassword(otp);
 
@@ -97,7 +110,10 @@ public class AuthController(
         });
         await db.SaveChangesAsync();
 
+        // Always log OTP for dev visibility
         logger.LogInformation("OTP for {Email}: {Otp}", user.Email, otp);
+
+        // Send OTP email — awaited so it completes reliably
         await email.SendPasswordResetOtpAsync(user.Email, user.Name, otp);
 
         return Ok(new { message = "If this email is registered, an OTP has been sent." });
@@ -150,7 +166,7 @@ public class AuthController(
         return Ok(new { message = "Password reset successfully. You can now sign in." });
     }
 
-    // ── CHANGE PASSWORD (logged-in user) ──────────────────
+    // ── CHANGE PASSWORD (logged-in) ───────────────────────
     [HttpPost("change-password"), Authorize]
     public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest req)
     {
