@@ -311,7 +311,7 @@ public class EmailService(IConfiguration config, ILogger<EmailService> logger) :
             // Disable certificate validation issues on some hosts
             client.ServerCertificateValidationCallback = (s, c, h, e) => true;
 
-            await client.ConnectAsync(SmtpHost, SmtpPort, SecureSocketOptions.Auto);
+            await client.ConnectAsync(SmtpHost, SmtpPort, SecureSocketOptions.StartTls);
             await client.AuthenticateAsync(fromEmail, fromPassword);
             await client.SendAsync(msg);
             await client.DisconnectAsync(true);
